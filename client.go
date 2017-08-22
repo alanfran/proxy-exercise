@@ -42,50 +42,54 @@ func NewClient(localAddress, proxyAddress string) (*Client, error) {
 	}, err
 }
 
-func (c *Client) Run() error {
+func (c *Client) Run() {
 	// Connect to the proxy server.
-	log.Println("Connecting to proxy server: ", c.serverAddress.String())
+	log.Println("[Client] Connecting to proxy server: ", c.serverAddress.String())
 	server, err := net.DialTCP("tcp", nil, c.serverAddress)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	c.server = server
 
 	// Generate keypair and send public key to proxy.
 	clientEntity, err := openpgp.NewEntity("client", "", "", nil)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	err = clientEntity.SerializePrivate(nop.NewWriter(), nil)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
-	log.Println("Exchanging public keys...")
+	log.Println("[Client] Sending public key...")
 	err = clientEntity.Serialize(server)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
 	// Await the server's public key.
+	log.Println("[Client] Awaiting server's public key...")
 	serverEntity, err := openpgp.ReadEntity(packet.NewReader(server))
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 
-	log.Println("Listening on ", c.localAddress.String(), " for requests.")
+	log.Println("[Client] Listening on ", c.localAddress.String(), " for requests.")
 	// Listen on localAddress for requests.
 	listener, err := net.ListenTCP("tcp", c.localAddress)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	c.listener = listener
 
 	client, err := listener.AcceptTCP()
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
+	c.client = client
 
-	log.Println("Request received. Proxying data...")
+	log.Println("[Client] Request received. Proxying data...")
 
 	// server -> client
 	go func() {
@@ -154,4 +158,11 @@ func (c *Client) Run() error {
 		}
 	}
 
+}
+
+func (c *Client) Close() {
+	log.Println("[Client] Closing connection...")
+	c.server.Close()
+	c.client.Close()
+	c.listener.Close()
 }
