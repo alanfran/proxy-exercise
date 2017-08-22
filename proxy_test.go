@@ -1,23 +1,23 @@
 package proxy
 
 import (
+	"log"
 	"net"
-
-	"github.com/johnmcconnell/nop"
-	"golang.org/x/crypto/openpgp"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
 var (
-	localAddress  = "localhost:9001"
-	remoteAddress = "localhost:9002"
+	clientAddress = "localhost:9001"
+	proxyAddress  = "localhost:9002"
+	remoteAddress = "localhost:9003"
 )
 
 var _ = Describe("Proxy", func() {
-	var p *Proxy
-	var client *net.TCPConn
+	var proxy *Proxy
+	var client *Client
 	var remoteListener *net.TCPListener
 	var remote *net.TCPConn
 
@@ -25,55 +25,46 @@ var _ = Describe("Proxy", func() {
 		BeforeEach(func() {
 			var err error
 
-			localTCPAddress, err := net.ResolveTCPAddr("tcp", localAddress)
-			Expect(err).ToNot(HaveOccurred())
+			// proxyTCPAddress, err := net.ResolveTCPAddr("tcp", proxyAddress)
+			// Expect(err).ToNot(HaveOccurred())
+
+			// clientTCPAddress, err := net.ResolveTCPAddr("tcp", clientAddress)
+			// Expect(err).ToNot(HaveOccurred())
 
 			remoteTCPAddress, err := net.ResolveTCPAddr("tcp", remoteAddress)
-			Expect(err).ToNot(HaveOccurred())
-
-			p, err = NewProxy(localAddress, remoteAddress)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create a remote listener.
 			remoteListener, err = net.ListenTCP("tcp", remoteTCPAddress)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Run the proxy
-			go p.Run()
-
-			// Connect a client
-			client, err = net.DialTCP("tcp", nil, localTCPAddress)
+			// Create and run the proxy
+			proxy, err = NewProxy(proxyAddress, remoteAddress)
 			Expect(err).ToNot(HaveOccurred())
+			go proxy.Run()
+
+			// Create and run a client
+			client, err = NewClient(clientAddress, proxyAddress)
+			Expect(err).ToNot(HaveOccurred())
+			go client.Run()
 
 			// Accept remote listener.
+			log.Println("[Remote] Awaiting connection from server...")
 			remote, err = remoteListener.AcceptTCP()
 			Expect(err).ToNot(HaveOccurred())
+			log.Println("[Remote] Server connected.")
 		})
 
 		AfterEach(func() {
 			client.Close()
-			p.Close()
+			proxy.Close()
+			remote.Close()
 		})
 
-		It("should take client's public key and send server's public key", func() {
-			clientEntity, err := openpgp.NewEntity("client", "", "", nil)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Necessary. See: https://github.com/golang/go/issues/6483
-			err = clientEntity.SerializePrivate(nop.NewWriter(), nil)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Send client public key.
-			err = clientEntity.Serialize(client)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Wait for server public key
-			// Deadlock?
-
-			//buffer := make([]byte, 65535)
-			//n, err := client.Read(buffer)
-			//Expect(err).ToNot(HaveOccurred())
-			//log.Println(buffer[:n])
+		It("should proxy a connection from client, through the proxy, to remote", func() {
+			// send message through client
+			time.Sleep(time.Second * 10)
+			// expect remote to receive message
 		})
 	})
 })

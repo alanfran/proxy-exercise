@@ -54,26 +54,26 @@ func NewProxy(localAddress, remoteAddress string) (*Proxy, error) {
 //   * expects the client to send their public key in the first message,
 //   * generates a keypair and sends the public key to the client,
 //   * and begins proxying requests between the client and remoteAddress
-func (p *Proxy) Run() error {
+func (p *Proxy) Run() {
 	var err error
 
-	log.Println("Running proxy on ", p.localAddress.String())
+	log.Println("[Server] Running proxy on ", p.localAddress.String())
 
 	// Create a TCP listener on localAddress
 	p.listener, err = net.ListenTCP("tcp", p.localAddress)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 	defer p.listener.Close()
 
 	// Wait for a client to connect
-	log.Println("Waiting for client to connect.")
+	log.Println("[Server] Waiting for client to connect.")
 	p.client, err = p.listener.AcceptTCP()
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 	defer p.client.Close()
-	log.Println("Accepted client. Awaiting public key.")
+	log.Println("[Server] Accepted client. Awaiting public key.")
 
 	// get client public key
 	clientEntity, err := openpgp.ReadEntity(packet.NewReader(p.client))
@@ -81,14 +81,13 @@ func (p *Proxy) Run() error {
 		log.Fatal(errors.Wrap(err, "Error getting client's entity data."))
 	}
 
-	log.Println("Got client public key.")
+	log.Println("[Server] Got client public key.")
 
 	// generate and send server public key
 	serverEntity, err := openpgp.NewEntity("proxy-server", "temporary", "", nil)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "Error generating new PGP entity."))
 	}
-	log.Println("Generated server keys.")
 
 	// Necessary to make the entity Serializable. See: https://github.com/golang/go/issues/6483
 	err = serverEntity.SerializePrivate(nop.NewWriter(), nil)
@@ -96,25 +95,25 @@ func (p *Proxy) Run() error {
 		log.Fatal(errors.Wrap(err, "Error signing serverEntity."))
 	}
 
-	log.Println("Sending server public key...")
+	log.Println("[Server] Sending public key...")
 	err = serverEntity.Serialize(p.client)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "Error serializing serverEntity and sending to client."))
 	}
 
-	log.Println("Sent server public key.")
+	log.Println("[Server] Sent public key.")
 
 	// Connect to remoteAddress
 	log.Println("Connecting to remote", p.remoteAddress.String())
 	p.remote, err = net.DialTCP("tcp", nil, p.remoteAddress)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
 	defer p.remote.Close()
-	log.Println("Connected to remote", p.remoteAddress.String())
+	log.Println("[Server] Connected to remote", p.remoteAddress.String())
 
 	// begin proxying
-	log.Println("Proxy engaged.")
+	log.Println("[Server] Proxy engaged.")
 	// client -> remote
 	go func() {
 		for {
