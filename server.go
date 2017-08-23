@@ -21,6 +21,8 @@ type Proxy struct {
 	listener *net.TCPListener
 	client   *net.TCPConn
 	remote   *net.TCPConn
+
+	closed bool
 }
 
 // NewProxy constructs a new Proxy given the following parameters, and will return an error
@@ -62,7 +64,7 @@ func (p *Proxy) Run() {
 	// Create a TCP listener on localAddress
 	p.listener, err = net.ListenTCP("tcp", p.localAddress)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Server] "))
 	}
 	defer p.listener.Close()
 
@@ -70,13 +72,19 @@ func (p *Proxy) Run() {
 	log.Println("[Server] Waiting for client to connect.")
 	p.client, err = p.listener.AcceptTCP()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Server] "))
 	}
 	defer p.client.Close()
 	log.Println("[Server] Accepted client. Awaiting public key.")
 
 	// get client public key
-	clientEntity, err := openpgp.ReadEntity(packet.NewReader(p.client))
+	buf, err := MessageReadWriter{p.client}.ReadMessage()
+	buffer := bytes.NewBuffer(buf)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "[Server] Error reading message from client."))
+	}
+	log.Println("[Server] Received message. Creating entity...")
+	clientEntity, err := openpgp.ReadEntity(packet.NewReader(buffer))
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "Error getting client's entity data."))
 	}
@@ -96,18 +104,26 @@ func (p *Proxy) Run() {
 	}
 
 	log.Println("[Server] Sending public key...")
-	err = serverEntity.Serialize(p.client)
+	buffer.Reset()
+	err = serverEntity.Serialize(buffer)
 	if err != nil {
-		log.Fatal(errors.Wrap(err, "Error serializing serverEntity and sending to client."))
+		log.Fatal(errors.Wrap(err, "Error serializing serverEntity."))
 	}
 
+	n, err := MessageReadWriter{p.client}.Write(buffer.Bytes())
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "[Server] Error sending key to client."))
+	}
+	if n != buffer.Len() {
+		log.Fatal("[Server] Did not send entire key buffer to client.")
+	}
 	log.Println("[Server] Sent public key.")
 
 	// Connect to remoteAddress
-	log.Println("Connecting to remote", p.remoteAddress.String())
+	log.Println("[Server] Connecting to remote", p.remoteAddress.String())
 	p.remote, err = net.DialTCP("tcp", nil, p.remoteAddress)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Server] "))
 	}
 	defer p.remote.Close()
 	log.Println("[Server] Connected to remote", p.remoteAddress.String())
@@ -124,29 +140,35 @@ func (p *Proxy) Run() {
 				nil,
 				nil,
 			)
+			if p.closed {
+				return
+			}
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Server] Error decrypting message from client."))
 			}
 
 			msg, err := ioutil.ReadAll(message.UnverifiedBody)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Server] Error reading message from client."))
 			}
 
 			_, err = p.remote.Write(msg)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Server] Error writing to remote."))
 			}
-
+			// log.Println("[Server] Wrote to remote. ")
 		}
 	}()
 
 	// remote -> client
 	for {
 		packet := make([]byte, 65535)
-		_, err := p.remote.Read(packet)
+		n, err := p.remote.Read(packet)
+		if p.closed {
+			return
+		}
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error reading from remote."))
 		}
 
 		buffer := new(bytes.Buffer)
@@ -158,31 +180,37 @@ func (p *Proxy) Run() {
 			nil,
 		)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error encrypting message to client."))
 		}
 
-		_, err = encrypter.Write(packet)
+		_, err = encrypter.Write(packet[:n])
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error writing encrypted message."))
 		}
 		err = encrypter.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error closing encrypter."))
 		}
 
 		message, err := ioutil.ReadAll(buffer)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error reading encrypted message into buffer."))
 		}
 
 		_, err = p.client.Write(message)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Server] Error writing message to client."))
 		}
+
+		// log.Println("[Server] Wrote to client: (encrypted) ", packet[:n])
 	}
 }
 
 func (p *Proxy) Close() {
+	log.Println("[Server] Closing connections...")
+
+	p.closed = true
+
 	p.remote.Close()
 	p.client.Close()
 	p.listener.Close()

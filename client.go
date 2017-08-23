@@ -2,14 +2,19 @@ package proxy
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 
 	"github.com/johnmcconnell/nop"
+	"github.com/pkg/errors"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/packet"
+
+	// Needed to encrypt messages.
+	_ "golang.org/x/crypto/ripemd160"
 )
 
 type Client struct {
@@ -23,6 +28,8 @@ type Client struct {
 
 	entity       *openpgp.Entity
 	serverEntity *openpgp.Entity
+
+	closed bool
 }
 
 func NewClient(localAddress, proxyAddress string) (*Client, error) {
@@ -47,45 +54,57 @@ func (c *Client) Run() {
 	log.Println("[Client] Connecting to proxy server: ", c.serverAddress.String())
 	server, err := net.DialTCP("tcp", nil, c.serverAddress)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] "))
 	}
 	c.server = server
 
 	// Generate keypair and send public key to proxy.
 	clientEntity, err := openpgp.NewEntity("client", "", "", nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] "))
 	}
 
 	err = clientEntity.SerializePrivate(nop.NewWriter(), nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] "))
 	}
 
 	log.Println("[Client] Sending public key...")
-	err = clientEntity.Serialize(server)
+	var buffer bytes.Buffer
+	err = clientEntity.Serialize(&buffer)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] Serializing public key."))
+	}
+
+	_, err = buffer.WriteTo(MessageReadWriter{server})
+	// _, err = MessageReadWriter{server}.Write(buffer.Bytes())
+	if err != nil && err != io.EOF {
+		log.Fatal(errors.Wrap(err, "[Client] Sending serialized key."))
 	}
 
 	// Await the server's public key.
 	log.Println("[Client] Awaiting server's public key...")
-	serverEntity, err := openpgp.ReadEntity(packet.NewReader(server))
+	buf, err := MessageReadWriter{server}.ReadMessage()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] Reading server's entity data."))
+	}
+	message := bytes.NewBuffer(buf)
+	serverEntity, err := openpgp.ReadEntity(packet.NewReader(message))
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "[Client] Creating server entity."))
 	}
 
 	log.Println("[Client] Listening on ", c.localAddress.String(), " for requests.")
 	// Listen on localAddress for requests.
 	listener, err := net.ListenTCP("tcp", c.localAddress)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] Error Listening: "))
 	}
 	c.listener = listener
 
 	client, err := listener.AcceptTCP()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(errors.Wrap(err, "[Client] Error Accepting TCP Connection: "))
 	}
 	c.client = client
 
@@ -101,18 +120,21 @@ func (c *Client) Run() {
 				nil,
 				nil,
 			)
+			if c.closed {
+				return
+			}
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Client] Error receiving encrypted message."))
 			}
 
 			msg, err := ioutil.ReadAll(message.UnverifiedBody)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Client] Error reading message."))
 			}
 
 			_, err = client.Write(msg)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "[Client] Error writing to client."))
 			}
 
 		}
@@ -121,9 +143,12 @@ func (c *Client) Run() {
 	// client -> server
 	for {
 		packet := make([]byte, 65535)
-		_, err := client.Read(packet)
+		n, err := client.Read(packet)
+		if c.closed {
+			return
+		}
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error reading packet from client."))
 		}
 
 		buffer := new(bytes.Buffer)
@@ -135,34 +160,37 @@ func (c *Client) Run() {
 			nil,
 		)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error creating encrypter."))
 		}
 
-		_, err = encrypter.Write(packet)
+		_, err = encrypter.Write(packet[:n])
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error writing to encrypter."))
 		}
 		err = encrypter.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error closing encrypter."))
 		}
 
 		message, err := ioutil.ReadAll(buffer)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error reading encrypted message to buffer."))
 		}
 
-		_, err = server.Write(message)
+		n, err = server.Write(message)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal(errors.Wrap(err, "[Client] Error writing message to server."))
 		}
 	}
 
 }
 
 func (c *Client) Close() {
-	log.Println("[Client] Closing connection...")
+	log.Println("[Client] Closing connections...")
+	c.closed = true
+
 	c.server.Close()
 	c.client.Close()
 	c.listener.Close()
+
 }
