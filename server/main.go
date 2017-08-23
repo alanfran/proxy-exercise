@@ -8,7 +8,7 @@ import (
 
 var (
 	localAddress  = flag.String("l", ":9001", "local address")
-	remoteAddress = flag.String("o", "google.com:80", "remote address")
+	remoteAddress = flag.String("o", "www.imdb.com:80", "remote address")
 )
 
 func main() {
@@ -19,8 +19,5 @@ func main() {
 		panic(err)
 	}
 
-	err = proxy.Run()
-	if err != nil {
-		panic(err)
-	}
+	proxy.Run()
 }
