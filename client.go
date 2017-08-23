@@ -17,6 +17,7 @@ import (
 	_ "golang.org/x/crypto/ripemd160"
 )
 
+// Client listens on a local port and sends encrypted messages to a proxy server.
 type Client struct {
 	localAddress  *net.TCPAddr
 	serverAddress *net.TCPAddr
@@ -32,6 +33,7 @@ type Client struct {
 	closed bool
 }
 
+// NewClient returns a client with resolved TCP addresses.
 func NewClient(localAddress, proxyAddress string) (*Client, error) {
 	localTCPAddress, err := net.ResolveTCPAddr("tcp", localAddress)
 	if err != nil {
@@ -49,6 +51,11 @@ func NewClient(localAddress, proxyAddress string) (*Client, error) {
 	}, err
 }
 
+// Run is the client's main loop. It:
+// * connects to the proxy server,
+// * exchanges public keys,
+// * sends encrypted messages to the server,
+// * and decrypts messages from the server.
 func (c *Client) Run() {
 	// Connect to the proxy server.
 	log.Println("[Client] Connecting to proxy server: ", c.serverAddress.String())
@@ -185,6 +192,8 @@ func (c *Client) Run() {
 
 }
 
+// Close stops the client from processing additional messages
+// and closes the client's TCP connections and listeners.
 func (c *Client) Close() {
 	log.Println("[Client] Closing connections...")
 	c.closed = true

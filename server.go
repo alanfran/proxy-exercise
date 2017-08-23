@@ -206,6 +206,8 @@ func (p *Proxy) Run() {
 	}
 }
 
+// Close stops the proxy from trying to process additional messages, and
+// closes the underlying tcp connections and listeners.
 func (p *Proxy) Close() {
 	log.Println("[Server] Closing connections...")
 

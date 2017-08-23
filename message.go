@@ -7,10 +7,13 @@ import (
 	"io"
 )
 
+// MessageReadWriter wraps an io.ReadWriter and reads/writes
+// sized messages.
 type MessageReadWriter struct {
 	rw io.ReadWriter
 }
 
+// Write writes the length of a message, and then the message to the underlying io.ReadWriter.
 func (m MessageReadWriter) Write(b []byte) (int, error) {
 	// write n (int32)
 	var n int32
@@ -27,42 +30,8 @@ func (m MessageReadWriter) Write(b []byte) (int, error) {
 	return nWritten, err
 }
 
+// Read reads a sized message into the given byte slice.
 func (m MessageReadWriter) Read(b []byte) (int, error) {
-	// var buffer bytes.Buffer
-	// nRead, err := m.rw.Read(buffer.Bytes())
-	// if nRead == 0 || err != nil {
-	// 	log.Println("Read nothing? n:", nRead, " err:", err)
-	// 	return nRead, err
-	// }
-
-	// log.Println("Read buffer initial size: ", buffer.Len())
-
-	// nb := bytes.NewBuffer(buffer.Next(4))
-
-	// // read n (int32)
-	// var n int32
-	// err = binary.Read(nb, binary.LittleEndian, &n)
-	// if err != nil {
-	// 	return 0, err
-	// }
-
-	// // read rest of message
-	// for {
-	// 	if buffer.Len() == int(n) {
-	// 		break
-	// 	}
-	// 	var chunk []byte
-	// 	_, err := m.rw.Read(chunk)
-	// 	if err != nil {
-	// 		break
-	// 	}
-	// 	buffer.Write(chunk)
-	// }
-
-	// nRead, err = buffer.Read(b)
-
-	// return nRead, err
-
 	var n int32
 	var nN int
 	for n == 0 {
@@ -103,6 +72,8 @@ func (m MessageReadWriter) Read(b []byte) (int, error) {
 	return nN + nBody, err
 }
 
+// ReadMessage reads a sized message from the underlying io.ReadWriter
+// and returns it in a byte slice.
 func (m MessageReadWriter) ReadMessage() ([]byte, error) {
 	var n int32
 	for n == 0 {
