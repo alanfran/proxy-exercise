@@ -99,9 +99,6 @@ var _ = Describe("Proxy", func() {
 
 				n, err = buffer.Write(b[:n])
 				Expect(err).ToNot(HaveOccurred())
-				if n != 0 {
-					// log.Println("[Test] Remote received ", n)
-				}
 			}
 
 			Expect(buffer.Bytes()).To(Equal(msg))

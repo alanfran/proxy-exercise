@@ -13,10 +13,10 @@ var (
 )
 
 func main() {
-	client, err := proxy.NewClient(*localAddress, *proxyAddress)
+	client := proxy.NewClient(*localAddress, *proxyAddress)
+
+	err := client.Run()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	client.Run()
 }

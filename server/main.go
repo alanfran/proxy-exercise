@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 
 	"github.com/alanfran/proxy-exercise"
 )
@@ -14,10 +15,10 @@ var (
 func main() {
 	flag.Parse()
 
-	proxy, err := proxy.NewProxy(*localAddress, *remoteAddress)
-	if err != nil {
-		panic(err)
-	}
+	proxy := proxy.NewProxy(*localAddress, *remoteAddress)
 
-	proxy.Run()
+	err := proxy.Run()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
