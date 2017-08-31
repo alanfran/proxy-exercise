@@ -18,26 +18,18 @@ var (
 var _ = Describe("Proxy", func() {
 	var proxy *Proxy
 	var client *Client
-	var remoteListener *net.TCPListener
-	var remoteConn *net.TCPConn
 
-	var clientConn *net.TCPConn
+	var remoteListener net.Listener
+	var remoteConn net.Conn
+
+	var clientConn net.Conn
 
 	Context("When initialized with valid endpoint addresses", func() {
 		BeforeEach(func() {
 			var err error
 
-			// proxyTCPAddress, err := net.ResolveTCPAddr("tcp", proxyAddress)
-			// Expect(err).ToNot(HaveOccurred())
-
-			clientTCPAddress, err := net.ResolveTCPAddr("tcp", clientAddress)
-			Expect(err).ToNot(HaveOccurred())
-
-			remoteTCPAddress, err := net.ResolveTCPAddr("tcp", remoteAddress)
-			Expect(err).ToNot(HaveOccurred())
-
 			// Create a remote listener.
-			remoteListener, err = net.ListenTCP("tcp", remoteTCPAddress)
+			remoteListener, err = net.Listen("tcp", remoteAddress)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create and run the proxy
@@ -50,12 +42,12 @@ var _ = Describe("Proxy", func() {
 
 			// Accept remote listener.
 			log.Println("[Remote] Awaiting connection from server...")
-			remoteConn, err = remoteListener.AcceptTCP()
+			remoteConn, err = remoteListener.Accept()
 			Expect(err).ToNot(HaveOccurred())
 			log.Println("[Remote] Server connected.")
 
-			// Connect to client
-			clientConn, err = net.DialTCP("tcp", nil, clientTCPAddress)
+			// Connect to the client
+			clientConn, err = net.Dial("tcp", clientAddress)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
