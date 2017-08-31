@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/johnmcconnell/nop"
 	"github.com/pkg/errors"
@@ -30,7 +31,8 @@ type Client struct {
 	entity       *openpgp.Entity
 	serverEntity *openpgp.Entity
 
-	closed bool
+	closed     bool
+	closeMutex sync.Mutex
 }
 
 // NewClient returns a client with resolved TCP addresses.
@@ -115,9 +117,6 @@ func (c *Client) Run() (err error) {
 				nil,
 				nil,
 			)
-			if c.closed {
-				return
-			}
 			if err != nil {
 				errChan <- errors.Wrap(err, "[Client] Error receiving encrypted message.")
 				return
@@ -142,9 +141,6 @@ func (c *Client) Run() (err error) {
 		for {
 			packet := make([]byte, 65535)
 			n, err := c.client.Read(packet)
-			if c.closed {
-				return
-			}
 			if err != nil {
 				errChan <- errors.Wrap(err, "[Client] Error reading packet from client.")
 				return
@@ -190,6 +186,16 @@ func (c *Client) Run() (err error) {
 
 	// Catch errors and shut down the client.
 	err = <-errChan
+
+	// If the client has been closed, ignore the resulting connection errors.
+	c.closeMutex.Lock()
+	if c.closed {
+		c.closeMutex.Unlock()
+		return nil
+	}
+	c.closeMutex.Unlock()
+
+	// Otherwise, close all connections and return the error.
 	c.Close()
 	return err
 }
@@ -199,7 +205,9 @@ func (c *Client) Run() (err error) {
 func (c *Client) Close() {
 	log.Println("[Client] Closing connections...")
 
+	c.closeMutex.Lock()
 	c.closed = true
+	c.closeMutex.Unlock()
 
 	c.server.Close()
 	c.client.Close()

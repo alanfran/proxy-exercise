@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"sync"
 
 	"github.com/johnmcconnell/nop"
 	"github.com/pkg/errors"
@@ -22,7 +23,8 @@ type Proxy struct {
 	client   net.Conn
 	remote   net.Conn
 
-	closed bool
+	closed     bool
+	closeMutex sync.Mutex
 }
 
 // NewProxy constructs a new Proxy given an address on which it will listen,
@@ -126,9 +128,6 @@ func (p *Proxy) Run() (err error) {
 				nil,
 				nil,
 			)
-			if p.closed {
-				return
-			}
 			if err != nil {
 				errChan <- errors.Wrap(err, "[Server] Error decrypting message from client.")
 				return
@@ -153,9 +152,6 @@ func (p *Proxy) Run() (err error) {
 		for {
 			packet := make([]byte, 65535)
 			n, err := p.remote.Read(packet)
-			if p.closed {
-				return
-			}
 			if err != nil {
 				errChan <- errors.Wrap(err, "[Server] Error reading from remote.")
 				return
@@ -201,6 +197,16 @@ func (p *Proxy) Run() (err error) {
 
 	// Catch errors and shut down the proxy.
 	err = <-errChan
+
+	// If the proxy has been closed, ignore the resulting connection errors.
+	p.closeMutex.Lock()
+	if p.closed {
+		p.closeMutex.Unlock()
+		return nil
+	}
+	p.closeMutex.Unlock()
+
+	// Otherwise, close the connections and return an error.
 	p.Close()
 	return err
 }
@@ -210,7 +216,9 @@ func (p *Proxy) Run() (err error) {
 func (p *Proxy) Close() {
 	log.Println("[Server] Closing connections...")
 
+	p.closeMutex.Lock()
 	p.closed = true
+	p.closeMutex.Unlock()
 
 	p.remote.Close()
 	p.client.Close()
