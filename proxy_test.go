@@ -41,13 +41,11 @@ var _ = Describe("Proxy", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create and run the proxy
-			proxy, err = NewProxy(proxyAddress, remoteAddress)
-			Expect(err).ToNot(HaveOccurred())
+			proxy = NewProxy(proxyAddress, remoteAddress)
 			go proxy.Run()
 
 			// Create and run a client
-			client, err = NewClient(clientAddress, proxyAddress)
-			Expect(err).ToNot(HaveOccurred())
+			client = NewClient(clientAddress, proxyAddress)
 			go client.Run()
 
 			// Accept remote listener.
